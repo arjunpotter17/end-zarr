@@ -1,11 +1,47 @@
 "use client";
 import { FetchStore, open } from "zarrita";
+import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+
+
+const s3 = new S3Client({
+  region: "ap-southeast-2",
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+  },
+});
+
+
+
+const expirationInSeconds = 3600; // URL expiry time in seconds (1 hour)
+
+async function generateSignedUrl() {
+  try {
+    const command = new GetObjectCommand({
+      Bucket: process.env.AWS_BUCKET_NAME,
+      Key: process.env.AWS_OBJECT_KEY,
+    });
+
+    const signedUrl = await getSignedUrl(s3, command, {
+      expiresIn: expirationInSeconds,
+    });
+
+    console.log("Signed URL:", signedUrl);
+    return signedUrl;
+  } catch (error) {
+    console.error("Error generating signed URL:", error);
+  }
+}
 
 export default function Home() {
   const fetchZarr = async () => {
     try {
-      const sstStore = new FetchStore("http://localhost:8080/output.zarr/sst");
+      const url = await generateSignedUrl();
+      console.log('this is the url', url);
+      const sstStore = new FetchStore(url ? url : "http://localhost:8080/output.zarr/sst");
       const sstArray = await open(sstStore, { kind: "array" });
+      console.log('this is sstArray', sstArray);
 
       //this is equivalent to the dimensions in netcdf (but notice that a depth layer has been added here which was not present in .nc)
       const [timeLen, depthLen, latLen, lonLen] = sstArray.shape;
@@ -14,14 +50,6 @@ export default function Home() {
       const chunks = sstArray.chunks;
 
       const [, , latChunkSize, lonChunkSize] = chunks;
-
-      // I copied this over from map-builder but we don't need this since data is compressed into chunks and we just map over the chunks
-      const minLat = 142;
-      const maxLat = latLen - 142;
-      const minLon = 1;
-      const maxLon = lonLen - 1;
-
-
 
       // reference date calucation, I'm not sure why it's done in mapbuilder 
 
@@ -76,7 +104,7 @@ export default function Home() {
   return (
     <div>
       <button onClick={fetchZarr}>Fuck with Zarr</button>
-      
+
     </div>
   );
 }
